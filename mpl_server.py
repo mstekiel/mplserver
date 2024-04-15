@@ -27,7 +27,7 @@ def setup_logging():
         },
         'loggers': {
             'root': {
-                'level': 'DEBUG',
+                'level': 'INFO',
                 'handlers': ['stdout']
             },
             'matplotlib': {
