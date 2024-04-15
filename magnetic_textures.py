@@ -7,6 +7,16 @@ import numpy as np
 import numpy.typing as npt
 import scipy
 
+def uvw2xyz(gamma, A, B):
+    '''Convert from crystal to cartesian coordinates.
+
+    A and B are matrices of points on the 2D lattice, as from `A, B = np.meshgrid(...)`
+    '''
+    cg = np.cos(np.radians(gamma))
+    sg = np.sin(np.radians(gamma))
+
+    return (A + B*cg, B*sg)
+
 def magnetization(lattice, modulations):
     '''Determine magnetization function for arbitrary number (n) of modulations.
 
@@ -27,19 +37,18 @@ def magnetization(lattice, modulations):
     '''
     NA, NB = lattice
     
-    Mx, My, Mz = np.zeros(tuple([3]+list(NA.shape)))
+    moments = np.zeros(tuple([3]+list(NA.shape)))
 
     for mod in modulations:
         q = mod['q']
-        M = np.array(mod['M'])
+        M = np.array(mod['M'], dtype=float)
         ph0 = mod['ph0']
         ph = NA*q[0] + NB*q[1] + ph0
 
-        Mx += M[0,0] * np.cos(2*np.pi * ph) + M[0,1] * np.sin(2*np.pi * ph)
-        My += M[1,0] * np.cos(2*np.pi * ph) + M[1,1] * np.sin(2*np.pi * ph)
-        Mz += M[2,0] * np.cos(2*np.pi * ph) + M[2,1] * np.sin(2*np.pi * ph)
+        moments += np.einsum('ij,k->kij', np.cos(2*np.pi * ph), M[:,0])
+        moments += np.einsum('ij,k->kij', np.sin(2*np.pi * ph), M[:,1])
         
-    return Mx, My, Mz
+    return moments
 
 def process_id_siteline(site_line: str):
     '''Process restriction on magnetization from ISODISTORT database.
@@ -79,7 +88,7 @@ def archive():
     print(process_id_siteline(site_line))
 
     k = 0.1
-    Mxs1 = 1
+    Mxs1 = 1.0
     modulations = [
         {'q': [k, 0, 0], 'ph0':0.0, 'M': [[0,Mxs1],[0,0.50000*Mxs1],[0,0]]},
         {'q': [-k, k, 0], 'ph0':0.0, 'M': [[0,-0.50000*Mxs1],[0,0.50000*Mxs1],[0,0]]},
@@ -87,21 +96,16 @@ def archive():
     ]
 
 
-def plot():
-
-    Na = Nb = 15
-    gamma = 120
-
-    # Parameters in crystal coordinates
 
     # Case3 -> yambe2021skyrmion Eq. 7
     # 177.2.82.5.m149.1 P 622.1(α, 0, 0)000(α, α, 0)000
+    gamma = 120
     site_line = ' 1 a (0,0,0;0,0,0) ({0,Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,-Mxs1},{0,0}) '
     print(process_id_siteline(site_line))
 
-    a = 0.1
+    a = 1/16
     Mxs1, Mzc1= 1, 2
-    ph = 0.25 # try 0.25 as well
+    ph = 0. # try 0.25 as well
     st = np.sqrt(3)/2
     modulations = [
         {'q': [a, 0, 0], 'ph0':ph, 'M': [[0,0],[0,Mxs1],[Mzc1,0]]},
@@ -109,20 +113,40 @@ def plot():
         {'q': [0,-a,0], 'ph0':ph, 'M': [[0,st*Mxs1],[0,-0.5*Mxs1],[Mzc1,0]]},
     ]
 
-    # Larger scale = smaller arrows
+
+def plot():
+
+    # Case2
+    # 177.2.82.5.m149.1 P 622.1(α, 0, 0)000(α, α, 0)000
+    gamma = 120
+    site_line = ' 1 a (0,0,0;0,0,0) ({0,Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,-Mxs1},{0,0}) '
+    print(process_id_siteline(site_line))
+
+    k = 1/16
+    Mxs1 = 1.0
+    modulations = [
+        {'q': [k, 0, 0], 'ph0':0.0, 'M': [[0,Mxs1],[0,0.50000*Mxs1],[0,0]]},
+        {'q': [-k, k, 0], 'ph0':0.0, 'M': [[0,-0.50000*Mxs1],[0,0.50000*Mxs1],[0,0]]},
+        {'q': [0,-k,0], 'ph0':0.0, 'M': [[0,-0.50000*Mxs1],[0,-Mxs1],[0,0]]},
+    ]
+
+
+    # Plot options
+    Na = Nb = 16
     arrow_scale = 8e+1
 
-    # Calculations to cartesian system
-    cg = np.cos(np.radians(gamma))
-    sg = np.sin(np.radians(gamma))
+
+    ##############
+    # Calculations
     na = np.arange(-Na,Na+1)
     nb = np.arange(-Nb,Nb+1)
-    NA, NB = np.meshgrid(na, nb)
-    X = NA + NB*cg
-    Y = NB*sg
+    A, B = np.meshgrid(na, nb)
+    X, Y = uvw2xyz(gamma, A, B)
 
-    Mx, My, Mz = magnetization((NA,NB), modulations)
-    
+    Ma, Mb, Mc = magnetization((A,B), modulations)
+    Mx, My = uvw2xyz(gamma, Ma, Mb)
+    Mz = Mc
+
     # Plot
     fig, ax = plt.subplots(tight_layout=True)
     ax.quiver(X, Y, Mx, My, Mz, cmap=cm.jet, pivot='middle', scale=8e+1)
@@ -131,8 +155,6 @@ def plot():
     plt.axis('square')
     ax.set_xlim(lim_min, lim_max)
     ax.set_ylim(lim_min, lim_max)
-
-    print(fig.get_size_inches())
 
     plt.title('Magnetic textures')
 
