@@ -7,10 +7,10 @@ The absolute requirement in the script file is the `plot` method with signature:
 
 ### Usage
 
-`python mpl_wrapper.py script_file.py`
+`python mpl_server.py script_file.py`
 
 ## Examples
 
-`python mpl_wrapper.py magnetic_textures.py`
+`python mpl_server.py magnetic_textures.py`
 
-![](.\skyrmions.png)
+![](.\skyrmion.png)

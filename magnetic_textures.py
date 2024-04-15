@@ -64,7 +64,13 @@ def process_id_siteline(site_line: str):
 
     M = [M.replace('{','[').replace('}',']') for M in Mn]
 
-    return M
+    ret = 'modulations = [\n'
+    for m in M:
+        ret += f"\t{{'q':[a,0,0], 'ph0':0, 'M':[{m}] }},\n"
+
+    ret += "]"
+
+    return ret
 
 def archive():
     # Case1 -> reproduce slides
@@ -117,17 +123,18 @@ def archive():
 def plot():
 
     # Case2
-    # 177.2.82.5.m149.1 P 622.1(α, 0, 0)000(α, α, 0)000
+    # Magnetic superspace group: 175.2.80.1.m140.1  P6/m'(a,b,0)00(-a-b,a,0)00
     gamma = 120
-    site_line = ' 1 a (0,0,0;0,0,0) ({0,Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,0.50000*Mxs1},{0,0};{0,-0.50000*Mxs1},{0,-Mxs1},{0,0}) '
+    site_line = ' 1 a (0,0,z;0,0,mz) ({0,Mxs1},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,Mxs1-Mys1},{Mzc1,0};{0,-Mxs1+Mys1},{0,-Mxs1},{Mzc1,0}) '
     print(process_id_siteline(site_line))
 
-    k = 1/16
-    Mxs1 = 1.0
+    a, b = 1/16, 0
+    Mxs1, Mys1 = 0, 2
+    Mzc1 = 1
     modulations = [
-        {'q': [k, 0, 0], 'ph0':0.0, 'M': [[0,Mxs1],[0,0.50000*Mxs1],[0,0]]},
-        {'q': [-k, k, 0], 'ph0':0.0, 'M': [[0,-0.50000*Mxs1],[0,0.50000*Mxs1],[0,0]]},
-        {'q': [0,-k,0], 'ph0':0.0, 'M': [[0,-0.50000*Mxs1],[0,-Mxs1],[0,0]]},
+        {'q':[a,b,0], 'ph0':0, 'M':[[0,Mxs1],[0,Mys1],[Mzc1,0]] },
+        {'q':[-a-b,a,0], 'ph0':0, 'M':[[0,-Mys1],[0,Mxs1-Mys1],[Mzc1,0]] },
+        {'q':[b,-a-b,0], 'ph0':0, 'M':[[0,-Mxs1+Mys1],[0,-Mxs1],[Mzc1,0]] },
     ]
 
 
@@ -162,5 +169,5 @@ def plot():
 
 if __name__ == '__main__':
     fig = plot()
-    fig.savefig('test.png')
-    fig.savefig('test.pdf')
+    fig.savefig('skyrmion.png')
+    fig.savefig('skyrmion.pdf')
