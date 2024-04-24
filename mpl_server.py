@@ -55,8 +55,10 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
         path, filename = os.path.split(watched_filename)
         script_name, _ = os.path.splitext(filename)
+
+        sys.path.append(path)
         self.watched_module = importlib.import_module(script_name)
-        
+
         self.setup_widgets()
 
     def setup_widgets(self):
@@ -102,7 +104,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
         non_reloadable_modules = ['importlib', 'numpy']
         for name in dir(module):
-            if isinstance(submodule := getattr(module, name), type(importlib)):
+            submodule = getattr(module, name)
+            if isinstance(submodule, type(importlib)):
                 if not submodule.__name__ in non_reloadable_modules:
                     logger.debug(f'Reloading submodule: {submodule}')
                     importlib.reload(submodule)

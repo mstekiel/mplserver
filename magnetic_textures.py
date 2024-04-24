@@ -2,6 +2,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
+import colorsys
+
 
 import numpy as np
 import numpy.typing as npt
@@ -119,28 +121,43 @@ def archive():
         {'q': [0,-a,0], 'ph0':ph, 'M': [[0,st*Mxs1],[0,-0.5*Mxs1],[Mzc1,0]]},
     ]
 
-
-def plot():
-
-    # Case2
+        # Case4
     # Magnetic superspace group: 175.2.80.1.m140.1  P6/m'(a,b,0)00(-a-b,a,0)00
     gamma = 120
     site_line = ' 1 a (0,0,z;0,0,mz) ({0,Mxs1},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,Mxs1-Mys1},{Mzc1,0};{0,-Mxs1+Mys1},{0,-Mxs1},{Mzc1,0}) '
     print(process_id_siteline(site_line))
 
-    a, b = 1/16, 0
-    Mxs1, Mys1 = 0, 2
-    Mzc1 = 1
+    a, b = 3/Na, 0
+    Mxs1, Mys1 = 0, 1
+    Mzc1 = 0.5
     modulations = [
         {'q':[a,b,0], 'ph0':0, 'M':[[0,Mxs1],[0,Mys1],[Mzc1,0]] },
         {'q':[-a-b,a,0], 'ph0':0, 'M':[[0,-Mys1],[0,Mxs1-Mys1],[Mzc1,0]] },
         {'q':[b,-a-b,0], 'ph0':0, 'M':[[0,-Mxs1+Mys1],[0,-Mxs1],[Mzc1,0]] },
     ]
 
+# 1. Input z ISODISTORTA
+# 2. pcolormesh na ciagly rozklad
 
+def plot():
     # Plot options
-    Na = Nb = 16
+    Na = Nb = 100
     arrow_scale = 8e+1
+
+    # Case5 -> reproduce pdf card
+    # 89.2.63.9.m87.1  P422.1(a,0,0)0s0(0,a,0)000
+    gamma = 90
+    site_line = '1 a (0,0,0;0,0,0) ({0,0},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,0},{Mzc1,0}) '
+    print(process_id_siteline(site_line))
+
+    k = 1.5/Na
+    Mxs1, Mzc1 = 3, 3
+    modulations = [
+        {'q': [k, 0, 0], 'ph0':0.0, 'M': [[0,Mxs1],[0,0],[Mzc1,0]]},
+        {'q': [0,k,0], 'ph0':0.0, 'M': [[0,0],[0,Mxs1],[Mzc1,0]]},
+    ]
+
+
 
 
     ##############
@@ -156,12 +173,51 @@ def plot():
 
     # Plot
     fig, ax = plt.subplots(tight_layout=True)
-    ax.quiver(X, Y, Mx, My, Mz, cmap=cm.jet, pivot='middle', scale=8e+1)
+    # ax.quiver(X, Y, Mx, My, Mz, cmap=cm.jet, pivot='middle', scale=8e+1)
+
+    Mrho = np.sqrt(Mx**2 + My**2)
+    Mr = np.sqrt(Mrho**2 + Mz**2)
+    th = np.arctan2(Mz, Mrho)
+    phi = np.arctan2(My, Mx)
+
+    phispan = 2*np.pi
+    h = np.mod(phi+0, phispan)/phispan
+    l = (th+np.pi/2)/(np.pi)
+    s = np.ones(h.shape)
+    # s = Mr/Mr.max()   # Length encoded in saturation, degenerated for theta=0 or 1
+    
+    color = np.zeros((h.shape[0],h.shape[1],3))
+    for it_i in range(h.shape[0]):
+        for it_j in range(h.shape[1]):
+            color[it_i,  it_j] = colorsys.hls_to_rgb(h[it_i,it_j], l[it_i,it_j], s[it_i,it_j])
+    # hsl = np.array([h,np.ones(shape=h.shape),l]).T
+    # color = colorsys.hls_to_rgb(h,l,s)
+    # cl = np.vectorize(colorsys.hls_to_rgb)
+    # color = cl([h,l,s])
+
+    g = 128/256
+    ax.set_facecolor((g,g,g))
+
+    cp, sp = (np.cos(phi)+1)/2, (np.sin(phi)+1)/2
+    ct, st = (np.cos(th)+1)/2, (np.sin(th)+1)/2
+    ptd = np.sqrt(3)/2
+    # r = 0.5*np.einsum('i,ikl->kl', [0, -1], [np.cos(phi), np.sin(phi)])+0.5
+    # g = 0.5*np.einsum('i,ikl->kl', [0.5, ptd], [np.cos(phi), np.sin(phi)])+0.5
+    # b = 0.5*np.einsum('i,ikl->kl', [-0.5, ptd], [np.cos(phi), np.sin(phi)])+0.5
+    # color = np.array([r,g,b]).T
+
+    Mx = np.zeros(X.shape)
+    My = np.zeros(X.shape)
+
+    c = color.reshape(-1, color.shape[-1])
+    ax.quiver(X.flatten(), Y.flatten(), Mx.flatten(), My.flatten(), 
+              color=c, pivot='middle', scale=8e+1, width=0.008)
 
     lim_min, lim_max = np.min([X,Y]), np.max([X,Y])
+    lcut = 1
     plt.axis('square')
-    ax.set_xlim(lim_min, lim_max)
-    ax.set_ylim(lim_min, lim_max)
+    ax.set_xlim(lim_min/lcut, lim_max/lcut)
+    ax.set_ylim(lim_min/lcut, lim_max/lcut)
 
     plt.title('Magnetic textures')
 
