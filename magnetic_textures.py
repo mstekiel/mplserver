@@ -141,7 +141,7 @@ def archive():
 
 def plot():
     # Plot options
-    Na = Nb = 100
+    Na = Nb = 16
     arrow_scale = 8e+1
 
     # Case5 -> reproduce pdf card
@@ -172,7 +172,7 @@ def plot():
     Mz = Mc
 
     # Plot
-    fig, ax = plt.subplots(tight_layout=True)
+    fig, ax = plt.subplots(tight_layout=True, figsize=(7, 7))
     # ax.quiver(X, Y, Mx, My, Mz, cmap=cm.jet, pivot='middle', scale=8e+1)
 
     Mrho = np.sqrt(Mx**2 + My**2)
@@ -225,5 +225,5 @@ def plot():
 
 if __name__ == '__main__':
     fig = plot()
-    fig.savefig('skyrmion.png')
+    fig.savefig('skyrmion.png', dpi=200)
     fig.savefig('skyrmion.pdf')
