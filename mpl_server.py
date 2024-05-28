@@ -83,8 +83,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         self.fig = self.import_plot()
         
         # Standard resolution/dpi for mpl is 100
-        w_in, h_in = self.fig.get_size_inches()
-        self.resize(100*w_in, 100*h_in)
+        self.resize(*[int(100*x) for x in self.fig.get_size_inches()])
 
         self.canvas = FigureCanvas(self.fig)
         self.navigationtoolbar = NavigationToolbar(self.canvas, self)
