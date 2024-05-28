@@ -41,12 +41,30 @@ def setup_logging():
 from PyQt5 import QtCore
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar # type: ignore
-from matplotlib.backends.qt_compat import QtWidgets # type: ignore
+from matplotlib.backends.backend_qt import NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.qt_compat import QtWidgets # type: ignore # in qt_compat a proper version is imported based on installed Qt and can't be rocognized properly
 import matplotlib.pyplot as plt
+
+# typechecking
+from matplotlib.figure import Figure
+from types import ModuleType
 
 
 class ApplicationWindow(QtWidgets.QMainWindow):
+    # mpl figure
+    fig: Figure
+    canvas: FigureCanvas
+    navigationtoolbar: NavigationToolbar
+
+    # watched file
+    path: str
+    watched_module: ModuleType
+
+    # Qt types
+    # ignored as the mpl backed misbehaves with providing types
+    # _main = QtWidgets.QWidget()
+    # layout: QtWidgets.QVBoxLayout
+
     def __init__(self, watched_filename):
         super().__init__()
         self._main = QtWidgets.QWidget()
@@ -63,6 +81,7 @@ class ApplicationWindow(QtWidgets.QMainWindow):
 
     def setup_widgets(self):
         self.fig = self.import_plot()
+
         self.canvas = FigureCanvas(self.fig)
         self.navigationtoolbar = NavigationToolbar(self.canvas, self)
 
@@ -74,7 +93,8 @@ class ApplicationWindow(QtWidgets.QMainWindow):
         plt.close(self.fig) # to avoid overflow of figures
 
         # Clear all, as there aro some hidden widgets on top op canvas and navbar
-        while self.layout.count():  
+        # https://stackoverflow.com/a/10067548
+        while self.layout.count():
             child = self.layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
@@ -120,10 +140,7 @@ if __name__ == "__main__":
     if not qapp:
         qapp = QtWidgets.QApplication(sys.argv)
 
-
-    # setup_filewatcher()
     watched_filename = f'{os.getcwd()}\{sys.argv[1]}'
-    # watched_filename = r'C:\Users\Stekiel\Documents\GitHub\mplplotter\plot_something.py'
 
     logger.info(f'Starting the file watcher {watched_filename}')
     script_watcher = QtCore.QFileSystemWatcher([watched_filename])
