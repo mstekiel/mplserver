@@ -1,25 +1,20 @@
-from configparser import Interpolation
+import numpy as np
 from dataclasses import dataclass
-import matplotlib as mpl
-from matplotlib import tight_layout
-from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap as cm
-
 import colorsys
 
-import numpy as np
-
 # Typesetting
+from typing import Any
 from numpy.typing import NDArray
+from matplotlib.figure import Figure
 from matplotlib.axes import Axes
-from pandas import qcut
 
 @dataclass
 class Modulation:
-    q: list[float]
+    q: list[Any]
     phi0: float
-    Mf: list[list[float]]
+    Mf: list[list[Any]]
 
     def __post_init__(self):
         assert np.array(self.q).shape == (3,) # shape of the modulation vector must be 3
@@ -46,26 +41,132 @@ class Modulation:
     def Msin_vec(self):
         M = np.array(self.Mf, dtype=float)
         return M[:,1]
+    
+    # def __str__(self) -> str:
+    #     return self.__repr__()
 
+@dataclass
+class MSSG:
+    number_str: str
+    name: str
+    Mf_str: str
+    gamma: float = np.nan
+    index: tuple[int, ...] = ()
+    modulations: list[Modulation] = None # type: ignore
+    free_params: list[str] = None # type: ignore
+
+    # I want to have a constructor only from number, name and Mf.
+    # Then we have to generate the rest
+    def __post_init__(self):
+        # Unpack index to numbers
+        self.index = tuple([int(x) for x in self.number_str.replace('m','').split('.')])
+
+        if 74 < self.index[0] <= 142:   # tetragonal
+            self.gamma = 90
+        if 142 < self.index[0] <= 194:   # trigonal and hexagonal
+            self.gamma = 120
+
+
+        # Number and type of ks depends on index[2]
+        k_types = {
+            57:( ('a','b','0'), ('-b','a','0')),
+            63:( ('a','0','0'), ('0','a','0')),
+            68:( ('a','a','0'), ('-a','a','0')),
+            80:( ('a','b','0'), ('-a-b','a','0'), ('b','-a-b','0')),
+            82:( ('a','0','0'), ('-a','a','0'), ('0','-a','0')),
+            83:( ('a','a','0'), ('-2*a','a','0'), ('a','-2*a','0')),
+        }
+        ks = k_types[self.index[2]]
+
+        # Handling the string of fourier coefficients
+        remove_chars = {x:'' for x in '(){}'}
+        mfs = self.Mf_str.replace('},{',':').translate(str.maketrans(remove_chars))
+
+        fmf = [[[a.strip() for a in x.split(',')] for x in mf.split(':')] for mf in mfs.split(';')]
+        fmf = [[[a if a!='-' else '0' for a in x] for x in mf ] for mf in fmf]
+
+        # Making modulations
+        self.modulations = []
+        for k,mf in zip(ks, fmf):
+            self.modulations.append( Modulation(q=k, Mf=mf, phi0=0) )
+
+        # determining free parameters
+        # 1. In k from `ks` variable
+        # 2. In magnetization fourier components
+        self.free_params = []
+        for x in 'ab':
+            if x in ks[0]:
+                self.free_params.append(x)
+
+        for x in 'ABCDEF':
+            if x in self.Mf_str:
+                self.free_params.append(x)
+
+    def __repr__(self) -> str:
+        ret  = f'MSSG(number_str={self.number_str}, name={self.name}, index={self.index}\n'
+        ret += f' free_params={self.free_params},\n '
+        ret += ',\n '.join([str(mod) for mod in self.modulations])
+        ret += '\n)'
+        return ret
+    
+    def eval(self, tr_tab: dict[str, float]) -> list[Modulation]:
+        set_fp = set(self.free_params)
+
+        missing_symbols = set_fp - tr_tab.keys()
+
+        if missing_symbols:
+            raise KeyError(f'{missing_symbols} symbols are missing to evaluate modulations.')
+
+        modulations_evaluated = []
+        tt = str.maketrans({key:str(val) for key,val in tr_tab.items()})
+        for mod in self.modulations:
+            k_vals = [eval(x.translate(tt)) for x in mod.q]
+            Mf_vals = [[eval(x.translate(tt)) for x in ma] for ma in mod.Mf]
+
+            modulations_evaluated.append(Modulation(q=k_vals, Mf=Mf_vals, phi0=mod.phi0))
+
+        return modulations_evaluated
+
+def load_MSSG_tables() -> dict:
+    with open('./MSSG.txt','r') as ff:
+        lines = ff.readlines()
+
+    mssg_tables = {}
+    for line in lines:
+        # Ignore comented lines or lines with not enough entries
+        if (len(line) < 10) or (line[0] == '#'):
+            continue
+
+        # First split into name entries and fourier components
+        it_mf = line.find('{') - 1
+
+        mssg_number, mssg_name = line[:it_mf].split()[:2]
+        mssg_mf = line[it_mf:].strip()
+
+        mssg_tables[mssg_number] = MSSG(number_str=mssg_number, name=mssg_name, Mf_str=mssg_mf)
+
+    return mssg_tables
+
+MSSG_tables = load_MSSG_tables()
 
 class MagneticLattice(object):
     '''Lattice with magnetic moments on each lattice point'''
     # Lattice defining properties
     gamma: float
-    modulations: list[dict]
+    modulations: list[Modulation]
     # Lattice points
     lattice_ab: tuple[NDArray, NDArray]
     lattice_xy: tuple[NDArray, NDArray]
     magnetization_abc: tuple[NDArray, NDArray, NDArray]
     magnetization_xyz: tuple[NDArray, NDArray, NDArray]
 
-    def __init__(self, Na, Nb, gamma, modulations):
+    def __init__(self, N: int, modulations: list[Modulation], Nsub: int=1, gamma: float=90):
         self.gamma = gamma
         self.modulations = modulations
 
         # Na = Nb = lattice_extent
-        na = np.arange(-Na,Na+1)
-        nb = np.arange(-Nb,Nb+1)
+        na = np.arange(-N, N+1, Nsub)
+        nb = np.arange(-N, N+1, Nsub)
         A, B = np.meshgrid(na,nb)
         self.lattice_ab = (A, B)
         self.lattice_xy = self.uvw2xyz(gamma, self.lattice_ab[0], self.lattice_ab[1])
@@ -253,7 +354,7 @@ def plot_density(ax: Axes, mlat: MagneticLattice, skyrmion_palette: bool=False, 
     
     return im
 
-def test_interpolations() -> Figure:
+def test_interpolations(mag_lattice: MagneticLattice) -> Figure:
     int_types = ['antialiased', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite', 'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos', 'blackman']
     plot_mosaic = list(np.reshape(int_types+[str(x) for x in range(2)], (5,4)))
     margins = dict(top=0.975,bottom=0.025,left=0.0,right=1.0,hspace=0.3,wspace=0.0)
@@ -274,67 +375,53 @@ def test_interpolations() -> Figure:
 def plot():
     # Plot options
     qRangeScale = 1.5   # extension of the plot in units of modulation vector
-    Na = Nb = 32        # density of lattice points/plotted elements
+    N = 64        # density of lattice points/plotted elements
+    Narrs = 16
 
-    # Case5 -> reproduce pdf card
-    # 89.2.63.9.m87.1  P422.1(a,0,0)0s0(0,a,0)000
-    gamma = 90
-    site_line = '1 a (0,0,0;0,0,0) ({0,0},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,0},{Mzc1,0}) '
+    # site_line = '1 a (0,0,0;0,0,0) ({0,0},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,0},{Mzc1,0}) '
     # print(process_id_siteline(site_line))
 
-    k = 2/Na
     Mxs1, Mzc1 = 3, 3
-    modulations = [
-        Modulation(q=[k,0,0], phi0=0, Mf=[[0,Mxs1],[0,0],[Mzc1,0]]),
-        Modulation(q=[0,k,0], phi0=0, Mf=[[0,0],[0,Mxs1],[Mzc1,0]]),
-        # Modulation(q=[-k,-k,0], phi0=0, Mf=[[0,-Mxs1],[0,-Mxs1],[Mzc1,0]]),
-        ]
+   
+    mssg = MSSG_tables['115.2.68.12.m283.1']
+    print('Chosen MSSG:')
+    print(mssg)
+    modulations = mssg.eval(dict(a=1/N, b=0, A=2, B=2, C=1, D=1))
+    print('Evaluated modulations:')
+    print(modulations)
 
-    mag_lattice = MagneticLattice(Na, Nb, gamma, modulations)
+    mag_lattice = MagneticLattice(N=N, gamma=mssg.gamma, modulations=modulations)
+    mag_lattice_sub = MagneticLattice(N=N, Nsub=N/Narrs, gamma=mssg.gamma, modulations=modulations)
 
     ##############
     # Plot
-    # fig = test_interpolations()
-    fig, ax = plt.subplots(tight_layout=True, figsize=(8,8))
+    # fig = test_interpolations(mag_lattice)
+    fig, ax = plt.subplots(tight_layout=True, figsize=(9,9))
+
+    plt.title(f'Magnetic textures of MSSG={mssg.name}')
 
     # interesting interpolation schemes: [nearest, Gouraud]
-    plt_obj = plot_density(ax, mag_lattice, skyrmion_palette=False,
-                           plot_kwargs=dict(shading='nearest', cmap=cm('Spectral')))
-    fig.colorbar(plt_obj, ax=ax, fraction=0.03, label='Mz')
+    # plt_obj_dens = plot_density(ax, mag_lattice, skyrmion_palette=False,
+    #                        plot_kwargs=dict(shading='Gouraud', cmap=cm('Spectral')))
 
-    arrow_styles = dict(alpha=0.2, cmap=cm('viridis'))
-    # plt_obj = plot_arrows(ax, mag_lattice, representation='2D', plot_kwargs=arrow_styles)
+    arrow_styles = dict(alpha=1, cmap=cm('Spectral'))
+    plt_obj_arr = plot_arrows(ax, mag_lattice_sub, representation='3D', plot_kwargs=arrow_styles)
+    fig.colorbar(plt_obj_arr, ax=ax, fraction=0.03, label='Mz')
 
-    plt.title('Magnetic textures')
     # plt.axis('square')
     # fig.colorbar()
 
-    RS = 2
-    ax.set_xlim(-Na/RS, Na/RS)
-    ax.set_ylim(-Nb/RS, Nb/RS)
+    RS = 1
+    ax.set_xlim(-N/RS, N/RS)
+    ax.set_ylim(-N/RS, N/RS)
 
 
     return fig
 
+
+
 if __name__ == '__main__':
-    Na = Nb = 128        # density of lattice points/plotted elements
-
-    # Case5 -> reproduce pdf card
-    # 89.2.63.9.m87.1  P422.1(a,0,0)0s0(0,a,0)000
-    gamma = 90
-    site_line = '1 a (0,0,0;0,0,0) ({0,0},{0,Mys1},{Mzc1,0};{0,-Mys1},{0,0},{Mzc1,0}) '
-    print(process_id_siteline(site_line))
-
-    k = 2/Na
-    Mxs1, Mzc1 = 3, 3
-    modulations = [
-        {'q': [k, 0, 0], 'ph0':0.0, 'M': [[0,Mxs1],[0,0],[Mzc1,0]]},
-        {'q': [0,k,0], 'ph0':0.0, 'M': [[0,0],[0,Mxs1],[Mzc1,0]]},
-    ]
-
-    mag_lattice = MagneticLattice(Na, Nb, gamma, modulations)
-
-    print('dupa')
+    print(MSSG_tables['191.2.83.7.m236.1'])
 
     # fig = plot()
     # fig.savefig('skyrmion.png', dpi=100)
